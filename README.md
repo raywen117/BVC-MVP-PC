@@ -17,7 +17,7 @@ Then drop app.py file into the (new) project folder.
 Initialize fresh environment
 ```python -m venv venv```
 
-Activate it (If you get a script execution error, first run: Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process)
+Activate it
 ```.\venv\Scripts\Activate.ps1```
 
 If restriction error occurs run this then re-try: 
