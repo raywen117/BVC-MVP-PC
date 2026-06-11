@@ -14,7 +14,7 @@ Run in standard Windows Command Prompt or PowerShell:
 Then drop app.py file into the (new) project folder.
 
 ## 2. Setup & Execution Sequence in VSCode terminal
-# Initialize fresh environment
+Initialize fresh environment
 ```python -m venv venv```
 
 ### Activate it (If you get a script execution error, run: Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process)
