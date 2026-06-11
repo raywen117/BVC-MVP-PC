@@ -20,7 +20,7 @@ Initialize fresh environment
 Activate it
 ```.\venv\Scripts\Activate.ps1```
 
-If restriction error occurs run this then re-try: 
+If restriction error occurs run this then re-try activation: 
 ```Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process```
 
 ### Install requirements
