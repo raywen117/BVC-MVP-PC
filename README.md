@@ -1,11 +1,4 @@
 # BVC-MVP-PC with Ollama+VSCode
-BVC_data_catalog_mvp/
-│
-├── venv/                 Python virtual environment (Do not commit modifications here)
-├── app.py                Main application file containing the Streamlit UI and LLM parsing logic
-├── metadata_catalog.db   Automatically generated SQLite database file containing saved knowledge
-├── .gitignore            Tells Git to ignore the heavy 'venv' and local database binaries
-└── README.md             This setup and documentation file
 
 ## 🛠️ System Architecture Stack
 * **Frontend UI:** Streamlit (Python rapid prototyping framework)
