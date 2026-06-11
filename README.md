@@ -28,3 +28,6 @@ If restriction error occurs run this then re-try activation:
 
 ### Start MVP
 ```streamlit run app.py```
+
+### Stop MVP
+Press CTRL+C in terminal
