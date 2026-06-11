@@ -19,7 +19,6 @@ BVC_data_catalog_mvp/
 Run in standard Windows Command Prompt or PowerShell:
 ```ollama run llama3.2```
 (Once the download finishes and ">>>" prompt is shown, close with /bye)
-
 Then drop app.py file into the (new) project folder.
 
 ### 2. Setup & Execution Sequence
