@@ -13,9 +13,7 @@ Run in standard Windows Command Prompt or PowerShell:
 (Once the download finishes and ">>>" prompt is shown, close with /bye)
 Then drop app.py file into the (new) project folder.
 
-### 2. Setup & Execution Sequence
-Run in VSCode terminal:
-
+### 2. Setup & Execution Sequence in VSCode terminal
 # Initialize fresh environment
 ```python -m venv venv```
 
