@@ -24,7 +24,8 @@ If restriction error occurs run this then re-try activation:
 ```Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process```
 
 ### Install requirements
-```pip install streamlit requests```
+```pip install streamlit requests```    
+```pip install pandas openpyxl```
 
 ### Start MVP
 ```streamlit run app.py```
