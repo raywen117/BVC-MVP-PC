@@ -111,16 +111,34 @@ with tab1:
         if data:
             for row in data:
                 ticket_id = row[0]  # The unique database ID for this specific card
-                icon = "✅" if row[4] == "Resolved" else "⏳"
+                current_status = row[4]
+                icon = "✅" if current_status == "Resolved" else "⏳"
                 
-                with st.expander(f"{icon} [{row[4].upper()}] {row[1]}"):
+                with st.expander(f"{icon} [{current_status.upper()}] {row[1]}"):
                     st.write(f"**Answer/Context:** {row[2] if row[2] else '*No solution yet. Team is investigating.*'}")
                     st.write(f"**Technical Location:** `{row[3] if row[3] else 'Unknown / Unmapped'}`")
                     
-                    # Small visual separator line inside the card
                     st.write("---")
                     
-                    # Delete Button
+                    # --- NEW: EDIT TICKET FUNCTIONALITY ---
+                    # We wrap this in a form so users can type without the app refreshing on every keystroke
+                    with st.form(key=f"edit_form_{ticket_id}"):
+                        new_answer = st.text_area("Update Answer / Resolution", value=row[2] if row[2] else "")
+                        
+                        # Determine current dropdown index (0 for Open, 1 for Resolved)
+                        status_index = 0 if current_status == "Open" else 1
+                        new_status = st.selectbox("Update Status", ["Open", "Resolved"], index=status_index)
+                        
+                        # Layout formatting to make buttons look neat
+                        col_save, col_empty = st.columns([1, 2])
+                        with col_save:
+                            if st.form_submit_button("💾 Save Changes"):
+                                c.execute("UPDATE tickets SET answer = ?, status = ? WHERE id = ?", (new_answer, new_status, ticket_id))
+                                conn.commit()
+                                st.success("Ticket updated successfully!")
+                                st.rerun()
+                    
+                    # Delete Button (Must remain outside the edit form to function properly)
                     if st.button("🗑️ Delete Entry", key=f"del_{ticket_id}"):
                         c.execute("DELETE FROM tickets WHERE id = ?", (ticket_id,))
                         conn.commit()
@@ -130,51 +148,54 @@ with tab1:
             st.info("The knowledge base is currently empty. Log a manual ticket or instruct the AI assistant to map data.")
 
 # --- TAB 2: AI COPILOT SIMULATOR ---
-# --- TAB 2: AI COPILOT SIMULATOR ---
 with tab2:
     st.header("Ask or Train the Assistant")
     st.write("This workspace simulates how Microsoft Copilot parses the logged solutions to answer employee questions natively.")
     user_query = st.text_input("Ask a data question, or explicitly tell the AI to log new details:")
 
     if user_query:
-        # OPTIMIZED: Extract keywords from user query to pull only relevant context rows from SQL
-        # This keeps the context window clean and prevents Ollama from timing out
-        keywords = user_query.split()
-        search_conditions = []
-        params = []
+        # --- 1. SMART RETRIEVAL (Miniature Search Engine) ---
+        all_resolved = c.execute("SELECT question, answer, location FROM tickets WHERE status='Resolved'").fetchall()
         
-        for word in keywords:
-            if len(word) > 2:  # Ignore short words like 'in', 'to', 'the'
-                search_conditions.append("(question LIKE ? OR answer LIKE ? OR location LIKE ?)")
-                params.extend([f"%{word}%", f"%{word}%", f"%{word}%"])
+        import re
+        clean_query = re.sub(r'[^\w\s]', '', user_query.lower())
+        query_words = {w for w in clean_query.split() if len(w) > 2}
         
-        if search_conditions:
-            query_where = " AND " + " AND ".join(search_conditions)
-            query_str = f"SELECT question, answer, location FROM tickets WHERE status='Resolved' {query_where} LIMIT 15"
-            knowledge_entries = c.execute(query_str, params).fetchall()
-        else:
-            # Fallback if query is too short: just grab the 10 most recent entries
-            knowledge_entries = c.execute("SELECT question, answer, location FROM tickets WHERE status='Resolved' ORDER BY id DESC LIMIT 10").fetchall()
+        scored_entries = []
+        for row in all_resolved:
+            row_text = f"{row[0]} {row[1]} {row[2]}".lower()
+            score = sum(1 for w in query_words if w in row_text)
+            scored_entries.append((score, row))
             
+        scored_entries.sort(key=lambda x: x[0], reverse=True)
+        knowledge_entries = [entry[1] for entry in scored_entries[:15]]
+        
         context_str = "\n".join([f"Question: {row[0]} | Answer: {row[1]} | Location: {row[2]}" for row in knowledge_entries])
         
-        # Enhanced few-shot prompt giving Llama 3.2 an exact template match to follow
+        # --- 2. RE-ENGINEERED SCENARIO-BASED PROMPT ---
         system_prompt = (
-            f"You are the Data Copilot for Company H. Use the following corporate meta-knowledge context to answer inquiries:\n{context_str}\n\n"
-            f"CRITICAL RULE FOR LOGGING DATA:\n"
-            f"If the user tells you to save, map, or log where a specific dataset or table is located, you must extract the values and output exactly this text block structure, replacing the examples with their data:\n\n"
-            f"EXAMPLE OF HOW YOU MUST OUTPUT:\n"
+            f"You are the Data Copilot for Company H. Your job is to help employees find where data, machines, and files are located.\n"
+            f"NEVER write code (SQL, Python, etc.) to extract data.\n\n"
+            f"KNOWLEDGE BASE CONTEXT:\n{context_str}\n\n"
+            f"CRITICAL INTENT CLASSIFICATION - CHOOSE EXACTLY ONE SCENARIO:\n\n"
+            f"SCENARIO 1 [QUESTION WITH ANSWER]: The user is asking a question, and the answer IS present in the KNOWLEDGE BASE CONTEXT.\n"
+            f"- ACTION: Answer the question naturally in plain conversational text based ONLY on the context. DO NOT use the log template.\n\n"
+            f"SCENARIO 2 [QUESTION WITHOUT ANSWER]: The user is asking a pure question, the answer is NOT in the context, and the user DID NOT give you the answer in their message.\n"
+            f"- ACTION: Say 'I do not have this information' and output the LOG TEMPLATE with STATUS: Open. Leave ANSWER and LOCATION completely blank.\n\n"
+            f"SCENARIO 3 [ADD/ENTER KNOWLEDGE]: The user is explicitly instructing you to 'enter', 'add', 'log', 'save', 'store', or 'remember' new information, OR they are providing a factual statement containing both a topic and its location/contact.\n"
+            f"- ACTION: Extract the data provided by the user in their query. Output the LOG TEMPLATE with STATUS: Resolved.\n"
+            f"- IMPORTANT: Carefully pull the answer details (e.g., contact persons, departments, machines) from the user's prompt and map them to the ANSWER and LOCATION fields. Do not leave them blank.\n\n"
+            f"LOG TEMPLATE (Use ONLY for Scenario 2 and Scenario 3):\n"
             f"[START_LOG]\n"
-            f"QUESTION: Location of the marketing reports\n"
-            f"ANSWER: Stored inside the Salesforce marketing cloud platform\n"
-            f"LOCATION: Salesforce Marketing Cloud\n"
-            f"[END_LOG]\n\n"
-            f"Do not write 'Not provided' or 'None' if the user provided the details in their input. Extract the information accurately. Do not include conversational text before or after the tags."
+            f"QUESTION: <Summarize the core topic or question being answered>\n"
+            f"ANSWER: <The resolution, person, or system details provided by the user>\n"
+            f"LOCATION: <The specific department, folder, or machine provided by the user>\n"
+            f"STATUS: <Open or Resolved>\n"
+            f"[END_LOG]"
         )
 
         try:
             with st.spinner("Analyzing corporate knowledge base..."):
-                # OPTIMIZED: Increased timeout to 90 seconds to account for local token generation processing times
                 response = requests.post(
                     "http://localhost:11434/api/generate", 
                     json={"model": "llama3.2", "prompt": system_prompt + "\n\nUser Input: " + user_query, "stream": False},
@@ -182,40 +203,50 @@ with tab2:
                 )
                 ai_text = response.json().get("response", "").strip()
             
-            # Text-parsing logic
+            # --- 3. PARSING TICKET CREATION ---
             if "[START_LOG]" in ai_text:
                 try:
                     log_content = ai_text.split("[START_LOG]")[1].split("[END_LOG]")[0].strip()
                     lines = log_content.split("\n")
-                    q_data, a_data, loc_data = "AI Logged Data", "Automatically indexed", "Unspecified"
+                    
+                    q_data, a_data, loc_data, status_data = "Unknown Question", "", "", "Open"
                     
                     for line in lines:
-                        if line.startswith("QUESTION:"):
-                            q_data = line.replace("QUESTION:", "").strip()
-                        elif line.startswith("ANSWER:"):
-                            a_data = line.replace("ANSWER:", "").strip()
-                        elif line.startswith("LOCATION:"):
-                            loc_data = line.replace("LOCATION:", "").strip()
+                        if line.startswith("QUESTION:"): q_data = line.replace("QUESTION:", "").strip()
+                        elif line.startswith("ANSWER:"): a_data = line.replace("ANSWER:", "").strip()
+                        elif line.startswith("LOCATION:"): loc_data = line.replace("LOCATION:", "").strip()
+                        elif line.startswith("STATUS:"): status_data = line.replace("STATUS:", "").strip()
                     
-                    # DEDUPLICATION CHECK: Check if the AI's parsed entry is already in the database
+                    # Clean up hallucinated "None" or "Unknown" answers
+                    if a_data.lower() in ["", "none", "unknown", "n/a", "not provided"]: a_data = ""
+                    if loc_data.lower() in ["", "none", "unknown", "n/a", "not provided"]: loc_data = ""
+                    if "open" in status_data.lower(): status_data = "Open"
+                    else: status_data = "Resolved"
+                    
+                    # Deduplication Check
                     c.execute("SELECT id FROM tickets WHERE question = ? AND answer = ? AND location = ?", (q_data, a_data, loc_data))
                     if c.fetchone() is None:
-                        c.execute("INSERT INTO tickets (question, answer, status, location) VALUES (?, ?, 'Resolved', ?)", 
-                                  (q_data, a_data, loc_data))
+                        c.execute("INSERT INTO tickets (question, answer, status, location) VALUES (?, ?, ?, ?)", 
+                                  (q_data, a_data, status_data, loc_data))
                         conn.commit()
                         
-                        st.success("🤖 **Agentic Action Triggered:** Llama 3.2 successfully updated the SQL Knowledge Base!")
+                        if status_data == "Open":
+                            st.warning("⚠️ **Agentic Action:** The AI didn't know the answer, so it automatically created an **Open Ticket**!")
+                        else:
+                            st.success("✅ **Agentic Action:** Llama 3.2 successfully updated the SQL Knowledge Base with a **Resolved Ticket**!")
+                            
                         st.write(f"**Saved Question:** {q_data}")
-                        st.write(f"**Saved Answer:** {a_data}")
-                        st.write(f"**Saved Location:** `{loc_data}`")
+                        st.write(f"**Saved Answer:** {a_data if a_data else '*Left blank for human input*'}")
+                        st.write(f"**Saved Location:** `{loc_data if loc_data else 'Unknown'}`")
                     else:
-                        st.info("🤖 **Agentic Action:** Llama 3.2 identified this meta-knowledge, but it already exists in the database. Entry skipped to prevent duplication.")
+                        st.info("🤖 **Agentic Action:** Llama 3.2 identified this meta-knowledge, but it already exists in the database.")
                         
                 except Exception as parse_error:
                     st.error(f"The AI tried to save data but formatted it slightly wrong. Try rephrasing. Details: {parse_error}")
                     st.text("AI raw text output was:")
                     st.code(ai_text)
             else:
+                # If no [START_LOG] tags are used, just print the AI's natural conversational answer
                 st.info("🤖 **Copilot Assistant Response:**")
                 st.write(ai_text)
                 
