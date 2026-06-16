@@ -11,7 +11,7 @@
 Run in standard Windows Command Prompt or PowerShell:
 ```ollama run llama3.2```
 (Once the download finishes and ">>>" prompt is shown, close with /bye)
-Then drop app.py file into the (new) project folder.
+
 
 ## 2. Setup & Execution Sequence in VSCode terminal
 Initialize fresh environment
@@ -22,6 +22,10 @@ Activate it
 
 If restriction error occurs run this then re-try activation: 
 ```Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process```
+
+
+create Database from CSV: 
+```python seed_db.py``` 
 
 ### Install requirements
 ```pip install streamlit requests```    
