@@ -120,10 +120,12 @@ with tab1:
                     
                     st.write("---")
                     
-                    # --- NEW: EDIT TICKET FUNCTIONALITY ---
-                    # We wrap this in a form so users can type without the app refreshing on every keystroke
+                    # --- EDIT TICKET FUNCTIONALITY ---
                     with st.form(key=f"edit_form_{ticket_id}"):
                         new_answer = st.text_area("Update Answer / Resolution", value=row[2] if row[2] else "")
+                        
+                        # Added editable input field for the Location string
+                        new_location = st.text_input("Update Storage Location / System", value=row[3] if row[3] else "")
                         
                         # Determine current dropdown index (0 for Open, 1 for Resolved)
                         status_index = 0 if current_status == "Open" else 1
@@ -133,7 +135,8 @@ with tab1:
                         col_save, col_empty = st.columns([1, 2])
                         with col_save:
                             if st.form_submit_button("💾 Save Changes"):
-                                c.execute("UPDATE tickets SET answer = ?, status = ? WHERE id = ?", (new_answer, new_status, ticket_id))
+                                c.execute("UPDATE tickets SET answer = ?, status = ?, location = ? WHERE id = ?", 
+                                          (new_answer, new_status, new_location, ticket_id))
                                 conn.commit()
                                 st.success("Ticket updated successfully!")
                                 st.rerun()
@@ -246,9 +249,19 @@ with tab2:
                     st.text("AI raw text output was:")
                     st.code(ai_text)
             else:
-                # If no [START_LOG] tags are used, just print the AI's natural conversational answer
+                # If no [START_LOG] tags are used, just print the AI's natural conversational answer!
                 st.info("🤖 **Copilot Assistant Response:**")
                 st.write(ai_text)
+                
+                # --- ADDED: RESTORED EXTRACTED LOCATION DISPLAY ---
+                # Check if our search engine scored a valid match in the database context
+                if scored_entries and scored_entries[0][0] > 0:
+                    best_match = scored_entries[0][1]  # Pulls the top matching tuple (question, answer, location)
+                    verified_location = best_match[2]   # Grabs index 2 (the location field)
+                    
+                    if verified_location and verified_location.strip():
+                        st.write("---")
+                        st.markdown(f"**📍 Verified System Source/Location:** `{verified_location}`")
                 
         except Exception as e:
             st.error(f"Could not reach Ollama. Verify your background service is active. Error: {e}")
