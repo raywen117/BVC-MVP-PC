@@ -2,21 +2,32 @@ import streamlit as st
 import sqlite3
 import requests
 import pandas as pd  # For reading the Excel file
+import re
 
-# Initialize local SQLite database file
-conn = sqlite3.connect("metadata_catalog.db", check_same_thread=False)
-c = conn.cursor()
-c.execute('''CREATE TABLE IF NOT EXISTS tickets 
-             (id INTEGER PRIMARY KEY, question TEXT, answer TEXT, status TEXT, location TEXT)''')
-conn.commit()
+DB_FILE = "metadata_catalog.db"
+
+# --- THREAD-SAFE DATABASE HELPER FUNCTIONS ---
+def get_db_connection():
+    """Creates a unique database connection per thread/interaction."""
+    return sqlite3.connect(DB_FILE, check_same_thread=False)
+
+def init_db():
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute('''CREATE TABLE IF NOT EXISTS tickets 
+                     (id INTEGER PRIMARY KEY AUTOINCREMENT, question TEXT, answer TEXT, status TEXT, location TEXT)''')
+        conn.commit()
+
+# Initialize database right away
+init_db()
 
 # Page layout configuration
 st.set_page_config(layout="wide", page_title="Company H Data Catalog MVP")
-st.title("📦 Meta-Knowledge System (MVP Sandbox)")
+st.title("Meta-Knowledge System (MVP Sandbox)")
 st.write("Isolated prototype to showcase our idea in practice")
 
 # UI Navigation Tabs
-tab1, tab2 = st.tabs(["Dashboard & Ticket Entry", "🤖 AI Copilot Simulator"])
+tab1, tab2 = st.tabs(["Dashboard & Ticket Entry", "AI Copilot Simulator"])
 
 # --- TAB 1: TICKETING & METADATA ENTRY ---
 with tab1:
@@ -34,71 +45,67 @@ with tab1:
             submitted = st.form_submit_button("Submit Entry")
             
             if submitted and q:
-                # DEDUPLICATION CHECK: See if manual ticket already exists
-                c.execute("SELECT id FROM tickets WHERE question = ? AND answer = ? AND location = ?", (q, a, loc))
-                duplicate = c.fetchone()
-                
-                if not duplicate:
-                    c.execute("INSERT INTO tickets (question, answer, status, location) VALUES (?, ?, ?, ?)", (q, a, status, loc))
-                    conn.commit()
-                    st.success("Knowledge logged successfully!")
-                else:
-                    st.warning("⚠️ This exact entry already exists in the database. Skipped to prevent duplicates.")
-                
+                with get_db_connection() as conn:
+                    c = conn.cursor()
+                    # DEDUPLICATION CHECK: See if manual ticket already exists
+                    c.execute("SELECT id FROM tickets WHERE question = ? AND answer = ? AND location = ?", (q, a, loc))
+                    duplicate = c.fetchone()
+                    
+                    if not duplicate:
+                        c.execute("INSERT INTO tickets (question, answer, status, location) VALUES (?, ?, ?, ?)", (q, a, status, loc))
+                        conn.commit()
+                        st.success("Knowledge logged successfully!")
+                    else:
+                        st.warning("This exact entry already exists in the database. Skipped to prevent duplicates.")
                 st.rerun()
         
         # --- PART B: EXCEL FILE UPLOAD ---
         st.write("---") # Visual horizontal line as separator
-        st.subheader("📊 Import Excel Data")
+        st.subheader("Import Excel Data")
         st.write("Simulate Excel file access by uploading it (creates tickets/cards from data rows; only use small files)")
         uploaded_file = st.file_uploader("Drop Excel file here", type=["xlsx", "xls"])
         
         if uploaded_file is not None:
-            if st.button("🚀 Start Bulk Import", key="process_excel_btn"):
+            if st.button("Start Bulk Import", key="process_excel_btn"):
                 try:
                     with st.spinner("Parsing, cleaning, and deduplicating rows..."):
-                        # Read the file using pandas
                         df = pd.read_excel(uploaded_file)
                         
                         inserted_count = 0
                         skipped_count = 0
                         
-                        # Loop through rows and translate the automotive columns into text cards (tickets) for the AI
-                        for index, row in df.iterrows():
-                            # 1. Pull real data out of the specific Excel column headers
-                            manufacturer = str(row.get("VP: Manufacturer Group", "Unknown Manufacturer"))
-                            region = str(row.get("VP: Region", "Unknown Region"))
-                            country = str(row.get("VP: Country/Territory", "Unknown Country"))
-                            propulsion = str(row.get("E: Propulsion System Design", "N/A"))
-                            battery = str(row.get("EP: Battery Type", "N/A"))
-                            voltage = str(row.get("EP: System Voltage", "N/A"))
-                            motor_supplier = str(row.get("T: Manufacturer", "N/A"))
-                            vol_2024 = str(row.get("Vehicle Volume 2024", "0"))
-                            vol_2027 = str(row.get("Vehicle Volume 2027", "0"))
-                            
-                            # 2. Stitch together into meaningful Title and Description
-                            question = f"Specifications and volume overview for {manufacturer} ({country})"
-                            answer = f"This vehicle uses an {propulsion} design equipped with a {battery} battery operating at {voltage}V. The transmission/motor components are supplied by {motor_supplier}. Current 2024 production volume is {vol_2024} units, projected to scale to {vol_2027} units by 2027."
-                            location = f"Global Automotive Catalog -> Region: {region}"
-                            
-                            # 3. DEDUPLICATION CHECK: Look up row contents before saving
-                            c.execute("SELECT id FROM tickets WHERE question = ? AND answer = ? AND location = ?", (question, answer, location))
-                            if c.fetchone() is None:
-                                c.execute("INSERT INTO tickets (question, answer, status, location) VALUES (?, ?, 'Resolved', ?)", 
-                                          (question, answer, location))
-                                inserted_count += 1
-                            else:
-                                skipped_count += 1
-                        
-                        conn.commit()
+                        with get_db_connection() as conn:
+                            c = conn.cursor()
+                            # Loop through rows and translate the automotive columns into text cards (tickets) for the AI
+                            for index, row in df.iterrows():
+                                manufacturer = str(row.get("VP: Manufacturer Group", "Unknown Manufacturer"))
+                                region = str(row.get("VP: Region", "Unknown Region"))
+                                country = str(row.get("VP: Country/Territory", "Unknown Country"))
+                                propulsion = str(row.get("E: Propulsion System Design", "N/A"))
+                                battery = str(row.get("EP: Battery Type", "N/A"))
+                                voltage = str(row.get("EP: System Voltage", "N/A"))
+                                motor_supplier = str(row.get("T: Manufacturer", "N/A"))
+                                vol_2024 = str(row.get("Vehicle Volume 2024", "0"))
+                                vol_2027 = str(row.get("Vehicle Volume 2027", "0"))
+                                
+                                question = f"Specifications and volume overview for {manufacturer} ({country})"
+                                answer = f"This vehicle uses an {propulsion} design equipped with a {battery} battery operating at {voltage}V. The transmission/motor components are supplied by {motor_supplier}. Current 2024 production volume is {vol_2024} units, projected to scale to {vol_2027} units by 2027."
+                                location = f"Global Automotive Catalog -> Region: {region}"
+                                
+                                c.execute("SELECT id FROM tickets WHERE question = ? AND answer = ? AND location = ?", (question, answer, location))
+                                if c.fetchone() is None:
+                                    c.execute("INSERT INTO tickets (question, answer, status, location) VALUES (?, ?, 'Resolved', ?)", 
+                                              (question, answer, location))
+                                    inserted_count += 1
+                                else:
+                                    skipped_count += 1
+                            conn.commit()
                         
                         if inserted_count > 0:
                             st.success(f"Successfully imported {inserted_count} new unique rows! (Skipped {skipped_count} duplicates)")
                         else:
                             st.info(f"Import complete. No new data added. All {skipped_count} rows were identical duplicates.")
-                            
-                        st.rerun()
-                        
+                
                 except Exception as e:
                     st.error(f"Error reading Excel file. Ensure it has data. Details: {e}")
                 
@@ -106,11 +113,13 @@ with tab1:
         st.header("Corporate Data Knowledge Base")
         st.write("e.g. Microsoft Lists or SharePoint Online *(Showing latest 50 entries)*")
         
-        data = c.execute("SELECT id, question, answer, location, status FROM tickets ORDER BY id DESC LIMIT 50").fetchall()
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            data = c.execute("SELECT id, question, answer, location, status FROM tickets ORDER BY id DESC LIMIT 50").fetchall()
         
         if data:
             for row in data:
-                ticket_id = row[0]  # The unique database ID for this specific card
+                ticket_id = row[0]
                 current_status = row[4]
                 icon = "✅" if current_status == "Resolved" else "⏳"
                 
@@ -120,28 +129,26 @@ with tab1:
                     
                     st.write("---")
                     
-                    # --- NEW: EDIT TICKET FUNCTIONALITY ---
-                    # We wrap this in a form so users can type without the app refreshing on every keystroke
                     with st.form(key=f"edit_form_{ticket_id}"):
                         new_answer = st.text_area("Update Answer / Resolution", value=row[2] if row[2] else "")
-                        
-                        # Determine current dropdown index (0 for Open, 1 for Resolved)
                         status_index = 0 if current_status == "Open" else 1
                         new_status = st.selectbox("Update Status", ["Open", "Resolved"], index=status_index)
                         
-                        # Layout formatting to make buttons look neat
                         col_save, col_empty = st.columns([1, 2])
                         with col_save:
                             if st.form_submit_button("💾 Save Changes"):
-                                c.execute("UPDATE tickets SET answer = ?, status = ? WHERE id = ?", (new_answer, new_status, ticket_id))
-                                conn.commit()
+                                with get_db_connection() as conn:
+                                    c = conn.cursor()
+                                    c.execute("UPDATE tickets SET answer = ?, status = ? WHERE id = ?", (new_answer, new_status, ticket_id))
+                                    conn.commit()
                                 st.success("Ticket updated successfully!")
                                 st.rerun()
                     
-                    # Delete Button (Must remain outside the edit form to function properly)
                     if st.button("🗑️ Delete Entry", key=f"del_{ticket_id}"):
-                        c.execute("DELETE FROM tickets WHERE id = ?", (ticket_id,))
-                        conn.commit()
+                        with get_db_connection() as conn:
+                            c = conn.cursor()
+                            c.execute("DELETE FROM tickets WHERE id = ?", (ticket_id,))
+                            conn.commit()
                         st.success("Entry deleted!")
                         st.rerun()
         else:
@@ -154,12 +161,13 @@ with tab2:
     user_query = st.text_input("Ask a data question, or explicitly tell the AI to log new details:")
 
     if user_query:
-        # --- 1. SMART RETRIEVAL (Miniature Search Engine) ---
-        all_resolved = c.execute("SELECT question, answer, location FROM tickets WHERE status='Resolved'").fetchall()
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            all_resolved = c.execute("SELECT question, answer, location FROM tickets WHERE status='Resolved'").fetchall()
         
-        import re
         clean_query = re.sub(r'[^\w\s]', '', user_query.lower())
-        query_words = {w for w in clean_query.split() if len(w) > 2}
+        # Changed len(w) > 1 to capture important acronyms like IT, S3, SAP, UI
+        query_words = {w for w in clean_query.split() if len(w) > 1}
         
         scored_entries = []
         for row in all_resolved:
@@ -172,7 +180,6 @@ with tab2:
         
         context_str = "\n".join([f"Question: {row[0]} | Answer: {row[1]} | Location: {row[2]}" for row in knowledge_entries])
         
-        # --- 2. RE-ENGINEERED SCENARIO-BASED PROMPT ---
         system_prompt = (
             f"You are the Data Copilot for Company H. Your job is to help employees find where data, machines, and files are located.\n"
             f"NEVER write code (SQL, Python, etc.) to extract data.\n\n"
@@ -203,7 +210,6 @@ with tab2:
                 )
                 ai_text = response.json().get("response", "").strip()
             
-            # --- 3. PARSING TICKET CREATION ---
             if "[START_LOG]" in ai_text:
                 try:
                     log_content = ai_text.split("[START_LOG]")[1].split("[END_LOG]")[0].strip()
@@ -217,37 +223,36 @@ with tab2:
                         elif line.startswith("LOCATION:"): loc_data = line.replace("LOCATION:", "").strip()
                         elif line.startswith("STATUS:"): status_data = line.replace("STATUS:", "").strip()
                     
-                    # Clean up hallucinated "None" or "Unknown" answers
                     if a_data.lower() in ["", "none", "unknown", "n/a", "not provided"]: a_data = ""
                     if loc_data.lower() in ["", "none", "unknown", "n/a", "not provided"]: loc_data = ""
                     if "open" in status_data.lower(): status_data = "Open"
                     else: status_data = "Resolved"
                     
-                    # Deduplication Check
-                    c.execute("SELECT id FROM tickets WHERE question = ? AND answer = ? AND location = ?", (q_data, a_data, loc_data))
-                    if c.fetchone() is None:
-                        c.execute("INSERT INTO tickets (question, answer, status, location) VALUES (?, ?, ?, ?)", 
-                                  (q_data, a_data, status_data, loc_data))
-                        conn.commit()
-                        
-                        if status_data == "Open":
-                            st.warning("⚠️ **Agentic Action:** The AI didn't know the answer, so it automatically created an **Open Ticket**!")
-                        else:
-                            st.success("✅ **Agentic Action:** Llama 3.2 successfully updated the SQL Knowledge Base with a **Resolved Ticket**!")
+                    with get_db_connection() as conn:
+                        c = conn.cursor()
+                        c.execute("SELECT id FROM tickets WHERE question = ? AND answer = ? AND location = ?", (q_data, a_data, loc_data))
+                        if c.fetchone() is None:
+                            c.execute("INSERT INTO tickets (question, answer, status, location) VALUES (?, ?, ?, ?)", 
+                                      (q_data, a_data, status_data, loc_data))
+                            conn.commit()
                             
-                        st.write(f"**Saved Question:** {q_data}")
-                        st.write(f"**Saved Answer:** {a_data if a_data else '*Left blank for human input*'}")
-                        st.write(f"**Saved Location:** `{loc_data if loc_data else 'Unknown'}`")
-                    else:
-                        st.info("🤖 **Agentic Action:** Llama 3.2 identified this meta-knowledge, but it already exists in the database.")
+                            if status_data == "Open":
+                                st.warning(" **Agentic Action:** The AI didn't know the answer, so it automatically created an **Open Ticket**!")
+                            else:
+                                st.success(" **Agentic Action:** Llama 3.2 successfully updated the SQL Knowledge Base with a **Resolved Ticket**!")
+                                
+                            st.write(f"**Saved Question:** {q_data}")
+                            st.write(f"**Saved Answer:** {a_data if a_data else '*Left blank for human input*'}")
+                            st.write(f"**Saved Location:** `{loc_data if loc_data else 'Unknown'}`")
+                        else:
+                            st.info("🤖 **Agentic Action:** Llama 3.2 identified this meta-knowledge, but it already exists in the database.")
                         
                 except Exception as parse_error:
                     st.error(f"The AI tried to save data but formatted it slightly wrong. Try rephrasing. Details: {parse_error}")
                     st.text("AI raw text output was:")
                     st.code(ai_text)
             else:
-                # If no [START_LOG] tags are used, just print the AI's natural conversational answer
-                st.info("🤖 **Copilot Assistant Response:**")
+                st.info(" **Copilot Assistant Response:**")
                 st.write(ai_text)
                 
         except Exception as e:
