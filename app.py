@@ -1,3 +1,5 @@
+### This code was created with support of Google Gemini
+
 import streamlit as st
 import sqlite3
 import requests
@@ -25,11 +27,11 @@ with tab1:
     with col1:
         # --- PART A: MANUAL Knowledge Entry ---
         st.header("Log New Meta-Knowledge")
-        st.write("e.g. Microsoft Forms or Power Apps")
+        st.write("e.g. through Microsoft Lists Web UI or Power Apps")
         with st.form("ticket_form", clear_on_submit=True):
             q = st.text_input("User Question / Data Needed", placeholder="e.g., Where is the 2025 sales data for product X?")
             a = st.text_area("Answer / Resolution", placeholder="Leave blank if unknown or open...")
-            loc = st.text_input("Storage Location / System", placeholder="e.g., SharePoint / SAP table / Snowflake prod cluster")
+            loc = st.text_input("Storage Location / System", placeholder="e.g., SharePoint / SAP table / Machine XY")
             status = st.selectbox("Status", ["Open", "Resolved"])
             submitted = st.form_submit_button("Submit Entry")
             
@@ -104,7 +106,7 @@ with tab1:
                 
     with col2:
         st.header("Corporate Data Knowledge Base")
-        st.write("e.g. Microsoft Lists or SharePoint Online *(Showing latest 50 entries)*")
+        st.write("e.g. stored in Microsoft Lists or SharePoint Online *(MVP Showing latest 50 entries)*")
         
         data = c.execute("SELECT id, question, answer, location, status FROM tickets ORDER BY id DESC LIMIT 50").fetchall()
         
@@ -154,7 +156,7 @@ with tab1:
 with tab2:
     st.header("Ask or Train the Assistant")
     st.write("This workspace simulates how Microsoft Copilot parses the logged solutions to answer employee questions natively.")
-    user_query = st.text_input("Ask a data question, or explicitly tell the AI to log new details:")
+    user_query = st.text_input("Ask a data question or explicitly tell the AI to log new details:")
 
     if user_query:
         # --- 1. SMART RETRIEVAL (Miniature Search Engine) ---
