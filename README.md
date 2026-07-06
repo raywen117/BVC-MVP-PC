@@ -1,13 +1,13 @@
 # BVC-MVP-PC with Ollama+VSCode
 
 ## 🛠️ System Architecture Stack
-* **Frontend UI:** Streamlit (Python rapid prototyping framework)
-* **Database Layer:** SQLite3 (Embedded local relational database)
-* **Local AI Engine:** Ollama running Llama 3.2 (3-Billion parameter lightweight model)
+* **Frontend UI:** Streamlit
+* **Database Layer:** SQLite3
+* **Local AI Engine:** Ollama running Llama 3.2
 
 ---
 
-## 1. Ensure Local Model is Downloaded
+## 1. Install and Run Llama 3.2 then Ensure Local Model is Downloaded
 Run in standard Windows Command Prompt or PowerShell:
 ```ollama run llama3.2```
 (Once the download finishes and ">>>" prompt is shown, close with /bye)
@@ -28,7 +28,6 @@ If restriction error occurs run this then re-try activation:
 ```pip install pandas openpyxl```
 
 ### Start MVP
-```streamlit run app.py```
-Or ```.\venv\Scripts\python.exe -m streamlit run app.py```
+```streamlit run app.py``` Or ```.\venv\Scripts\python.exe -m streamlit run app.py```
 ### Stop MVP
 Press CTRL+C in terminal
